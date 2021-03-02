@@ -97,14 +97,30 @@ class Piece:
                 return True
         return False
 
-    def leftmost_block(self):
+    def right_border(self):
         m = len(self.matrix)
-        leftmost = m
-        for i in range(m):
-            for j in range(m):
-                if self.matrix[i][j] == 1 and j < leftmost:
-                    leftmost = j
-        return leftmost * CELL_WIDTH + self.x
+        border = []
+        for i in reversed(range(m)):
+            for j in reversed(range(m)):
+                if self.matrix[i][j] == 1:
+                    border.append([
+                        i + self.y // self.cell_height,
+                        j + self.x // self.cell_width
+                    ])
+                    break
+            else:
+                border.append([
+                    i + self.y // self.cell_height,
+                    m + self.x // self.cell_width
+                ])
+        return border
+
+    def has_right_neighbor(self):
+        border = self.right_border()
+        for i, j in border:
+            if (j == self.board.ncols-1) or self.board.matrix[i][j+1] == 1:
+                return True
+        return False
 
     def rightmost_block(self):
         m = len(self.matrix)
@@ -132,7 +148,7 @@ class Piece:
         self.draw()
 
     def move_right(self, event):
-        if self.rightmost_block() >= CANVAS_WIDTH:
+        if self.has_right_neighbor():
             return
         self.erase()
         self.x += CELL_WIDTH
