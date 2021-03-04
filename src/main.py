@@ -10,15 +10,6 @@ CELL_HEIGHT = 10
 CELL_OUTLINE = "gray50"
 PIECE_OUTLINE = "black"
 
-COLOR_O = "gold"
-COLOR_L = "orange"
-COLOR_J = "royal blue"
-COLOR_S = "green"
-COLOR_Z = "red"
-COLOR_I = "deep sky blue"
-COLOR_T = "slate blue"
-
-
 PIECE_COLORS = [
     "deep sky blue",
     "royal blue",
@@ -28,6 +19,7 @@ PIECE_COLORS = [
     "slate blue",
     "red",
 ]
+
 PIECE_SHAPES = ["I", "J", "L", "O", "S", "T", "Z"]
 SHAPE_TO_COLOR = dict(zip(PIECE_SHAPES, PIECE_COLORS))
 SHAPE_TO_VALUE = dict(zip(PIECE_SHAPES, range(1, len(PIECE_SHAPES)+1)))
@@ -198,14 +190,14 @@ class Piece:
                     bottommost = i
         return (bottommost + 1) * self.cell_height + self.y
 
-    def move_left(self, event):
+    def move_left(self):
         if self.has_left_neighbor():
             return
         self.erase()
         self.x -= self.cell_width
         self.draw()
 
-    def move_right(self, event):
+    def move_right(self):
         if self.has_right_neighbor():
             return
         self.erase()
@@ -219,7 +211,7 @@ class Piece:
         self.y += self.cell_width
         self.draw()
 
-    def rotate_clockwise(self, event):
+    def rotate_clockwise(self):
         m = len(self.matrix)
         self.erase()
         new_matrix = [
@@ -238,7 +230,7 @@ class Piece:
             self.y -= self.cell_height
         self.draw()
 
-    def rotate_anticlockwise(self, event):
+    def rotate_anticlockwise(self):
         m = len(self.matrix)
         self.erase()
         new_matrix = [
@@ -427,16 +419,6 @@ class Board(tk.Canvas):
                     outline=outline,
                 )
 
-        #for x in range(1, self.width, self.cell_width):
-        #    for y in range(1, self.height, self.cell_height):
-        #        self.create_rectangle(
-        #            x,
-        #            y,
-        #            x + self.cell_width,
-        #            y + self.cell_height,
-        #            outline=self.cell_outline,
-        #        )
-
     def start(self):
         self.move_piece_down(None)
         self.after(500, self.start)
@@ -449,15 +431,21 @@ class Board(tk.Canvas):
         self.piece = self.get_random_piece()
         self.piece.draw()
         self.bind("<Down>", self.move_piece_down)
-        self.bind("<Left>", self.piece.move_left)
-        self.bind("<Right>", self.piece.move_right)
-        self.bind("<d>", self.piece.rotate_clockwise)
-        self.bind("<a>", self.piece.rotate_anticlockwise)
+        self.bind("<Left>", self.move_piece_left)
+        self.bind("<Right>", self.move_piece_right)
+        self.bind("<d>", self.rotate_piece_clockwise)
+        self.bind("<a>", self.rotate_piece_anticlockwise)
 
-    def move_piece_left(self):
+    def rotate_piece_clockwise(self, event):
+        self.piece.rotate_clockwise()
+
+    def rotate_piece_anticlockwise(self, event):
+        self.piece.rotate_anticlockwise()
+
+    def move_piece_left(self, event):
         self.piece.move_left()
 
-    def move_piece_right(self):
+    def move_piece_right(self, event):
         self.piece.move_right()
 
     def move_piece_down(self, event):
@@ -478,9 +466,6 @@ class Board(tk.Canvas):
                 for row in full_rows:
                     self.shift_matrix_down(row)
                 self.draw_board(0, last_full_row+1)
-            for row in self.matrix:
-                print(row)
-            print()
             self.spawn_piece()
 
     def get_full_rows(self):
