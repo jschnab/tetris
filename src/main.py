@@ -477,7 +477,7 @@ class Board(tk.Canvas):
                 last_full_row = max(full_rows)
                 for row in full_rows:
                     self.shift_matrix_down(row)
-                self.draw_board(0, last_full_row)
+                self.draw_board(0, last_full_row+1)
             for row in self.matrix:
                 print(row)
             print()
