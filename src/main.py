@@ -402,6 +402,7 @@ class Board(tk.Canvas):
                     elif grandchild.winfo_name() == "level":
                         self.level_widget = grandchild
 
+        self.flag_stop = False
         self.score = 0
         self.counter = 0
         self.level = 1
@@ -450,7 +451,8 @@ class Board(tk.Canvas):
         self.counter += 1
         self.update_level()
         self.move_piece_down(None)
-        self.after(self.delay, self.start)
+        if not self.flag_stop:
+            self.after(self.delay, self.start)
 
     def update_level(self):
         jump_level = int(self.counter // self.level_threshold)
@@ -489,6 +491,8 @@ class Board(tk.Canvas):
     def move_piece_down(self, event):
         self.piece.move_down()
         if self.piece.has_bottom_neighbor():
+            if self.piece_at_top():
+                self.game_over()
             x_offset = self.piece.x // self.cell_height
             y_offset = self.piece.y // self.cell_width
             m = len(self.piece.matrix)
@@ -506,6 +510,9 @@ class Board(tk.Canvas):
                     self.shift_matrix_down(row)
                 self.draw_board(0, last_full_row+1)
             self.spawn_piece()
+
+    def piece_at_top(self):
+        return self.piece.y // self.cell_height == 0
 
     def get_full_rows(self):
         row_indices = []
@@ -537,6 +544,17 @@ class Board(tk.Canvas):
         }
         self.score += self.level * scale[nrows]
         self.score_widget.configure(text=str(self.score))
+
+    def game_over(self):
+        self.flag_stop = True
+        text = f"Congratulations! You scored {self.score} points!"
+        label = tk.Label(self.master, text=text)
+        label.pack()
+        ok = tk.Button(self.master, text="OK", command=self.save)
+        ok.pack()
+
+    def save(self):
+        self.master.destroy()
 
 
 def main():
