@@ -2,11 +2,25 @@ import tkinter as tk
 
 from random import randint
 
-CANVAS_WIDTH = 161
-CANVAS_HEIGHT = 161
+DELAYS = {
+    1: 500,
+    2: 450,
+    3: 400,
+    4: 350,
+    5: 300,
+    6: 250,
+    7: 175,
+    8: 100,
+    9: 25,
+}
+
+BOARD_WIDTH = 15
+BOARD_HEIGHT = 25
+CELL_WIDTH = 15
+CELL_HEIGHT = 15
+CANVAS_WIDTH = BOARD_WIDTH * CELL_WIDTH + 1
+CANVAS_HEIGHT = BOARD_HEIGHT * CELL_HEIGHT + 1
 CANVAS_BG = "gray75"
-CELL_WIDTH = 10
-CELL_HEIGHT = 10
 CELL_OUTLINE = "gray50"
 PIECE_OUTLINE = "black"
 
@@ -380,6 +394,19 @@ class Board(tk.Canvas):
             background=background,
         )
 
+        for child in self.master.winfo_children():
+            if child.winfo_name() == "info":
+                for grandchild in child.winfo_children():
+                    if grandchild.winfo_name() == "score":
+                        self.score_widget = grandchild
+                    elif grandchild.winfo_name() == "level":
+                        self.level_widget = grandchild
+
+        self.score = 0
+        self.counter = 0
+        self.level = 1
+        self.delay = DELAYS.get(self.level)
+        self.level_threshold = 120
         self.winfo_toplevel().title("Tetris")
         self.focus_set()
         self.width = width
@@ -420,8 +447,19 @@ class Board(tk.Canvas):
                 )
 
     def start(self):
+        self.counter += 1
+        self.update_level()
         self.move_piece_down(None)
-        self.after(500, self.start)
+        self.after(self.delay, self.start)
+
+    def update_level(self):
+        jump_level = int(self.counter // self.level_threshold)
+        if jump_level == 1:
+            self.level += jump_level
+            self.delay = DELAYS.get(self.level, 25)
+            self.counter = 0
+            self.level_threshold *= DELAYS[1] / self.delay
+            self.level_widget.configure(text=str(self.level))
 
     def get_random_piece(self):
         pieces = [I, J, L, O, S, T, Z]
@@ -430,9 +468,9 @@ class Board(tk.Canvas):
     def spawn_piece(self):
         self.piece = self.get_random_piece()
         self.piece.draw()
-        self.bind("<Down>", self.move_piece_down)
-        self.bind("<Left>", self.move_piece_left)
-        self.bind("<Right>", self.move_piece_right)
+        self.bind("<KeyPress-Down>", self.move_piece_down)
+        self.bind("<KeyPress-Left>", self.move_piece_left)
+        self.bind("<KeyPress-Right>", self.move_piece_right)
         self.bind("<d>", self.rotate_piece_clockwise)
         self.bind("<a>", self.rotate_piece_anticlockwise)
 
@@ -461,6 +499,7 @@ class Board(tk.Canvas):
                     if self.piece.matrix[i][j] > 0:
                         self.matrix[y_offset+i][x_offset+j] = self.piece.value
             full_rows = self.get_full_rows()
+            self.update_score(len(full_rows))
             if full_rows:
                 last_full_row = max(full_rows)
                 for row in full_rows:
@@ -488,9 +527,30 @@ class Board(tk.Canvas):
                 self.matrix[i][j] = self.matrix[i-1][j]
         self.matrix[0] = [0 for __ in range(self.ncols)]
 
+    def update_score(self, nrows):
+        scale = {
+            0: 0,
+            1: 50,
+            2: 150,
+            3: 350,
+            4: 1000
+        }
+        self.score += self.level * scale[nrows]
+        self.score_widget.configure(text=str(self.score))
+
 
 def main():
     root = tk.Tk()
+    info = tk.Frame(root, name="info")
+    info.pack()
+    score_txt = tk.Label(info, text="Score")
+    score_txt.pack()
+    score = tk.Label(info, name="score", text="0")
+    score.pack()
+    level_txt = tk.Label(info, text="Level")
+    level_txt.pack()
+    level = tk.Label(info, name="level", text="1")
+    level.pack()
     board = Board(root)
     board.pack(side=tk.TOP, padx=5, pady=5)
     board.draw_board()
