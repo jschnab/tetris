@@ -554,12 +554,12 @@ class Board(tk.Canvas):
             f"Congratulations!\nYou scored {self.score} points!\n\n"
             "Please enter your name:"
         )
-        label = tk.Label(top, text=text)
+        label = tk.Label(top, pady=5, padx=5, text=text)
         label.configure(font="TkFixedFont")
         label.pack()
         self.player_name_widget = tk.Entry(top)
         self.player_name_widget.pack()
-        ok = tk.Button(top, text="OK", command=self.save)
+        ok = tk.Button(top, pady=5, text="OK", command=self.save)
         ok.pack()
         try:
             with open(SCORES_FILE) as f:
