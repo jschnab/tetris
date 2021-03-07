@@ -1,7 +1,9 @@
+import json
 import tkinter as tk
 
 from random import randint
 
+SCORES_FILE = "scores.json"
 DELAYS = {
     1: 500,
     2: 450,
@@ -278,10 +280,10 @@ class O(Piece):
             [1, 1]
         ]
 
-    def rotate_clockwise(self, event):
+    def rotate_clockwise(self):
         pass
 
-    def rotate_anticlockwise(self, event):
+    def rotate_anticlockwise(self):
         pass
 
 
@@ -547,13 +549,44 @@ class Board(tk.Canvas):
 
     def game_over(self):
         self.flag_stop = True
-        text = f"Congratulations! You scored {self.score} points!"
-        label = tk.Label(self.master, text=text)
+        top = tk.Toplevel(self.master, name="gameover")
+        text = (
+            f"Congratulations!\nYou scored {self.score} points!\n\n"
+            "Please enter your name:"
+        )
+        label = tk.Label(top, text=text)
+        label.configure(font="TkFixedFont")
         label.pack()
-        ok = tk.Button(self.master, text="OK", command=self.save)
+        self.player_name_widget = tk.Entry(top)
+        self.player_name_widget.pack()
+        ok = tk.Button(top, text="OK", command=self.save)
         ok.pack()
+        try:
+            with open(SCORES_FILE) as f:
+                scores = json.load(f)
+        except FileNotFoundError:
+            scores = []
+        if scores:
+            top_scores = "Hall of Fame\n\n"
+            for i, (name, score) in enumerate(scores):
+                top_scores +=  f"{i+1:>2}. {name[:10]:<10}   {score:>5} pts\n"
+        else:
+            top_scores = "No scores yet"
+
+        hall_of_fame = tk.Label(top, padx=5, pady=20, text=top_scores)
+        hall_of_fame.configure(font="TkFixedFont")
+        hall_of_fame.pack()
 
     def save(self):
+        try:
+            with open(SCORES_FILE) as f:
+                scores = json.load(f)
+        except FileNotFoundError:
+            scores = []
+        scores.append((self.player_name_widget.get(), self.score))
+        scores.sort(key=lambda x: x[1], reverse=True)
+        with open(SCORES_FILE, "w") as f:
+            json.dump(scores[:10], f)
         self.master.destroy()
 
 
