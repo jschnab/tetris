@@ -33,7 +33,7 @@ PIECE_COLORS = [
     "gold",
     "green",
     "slate blue",
-    "red",
+    "orange red",
 ]
 
 PIECE_SHAPES = ["I", "J", "L", "O", "S", "T", "Z"]
@@ -324,7 +324,7 @@ class Z(Piece):
         x,
         y,
     ):
-        super().__init__(board, x, y, "J")
+        super().__init__(board, x, y, "Z")
         self.matrix = [
             [0, 0, 0],
             [1, 1, 0],
@@ -467,7 +467,7 @@ class Board(tk.Canvas):
 
     def get_random_piece(self):
         pieces = [I, J, L, O, S, T, Z]
-        return pieces[randint(0, 5)](self, 1, 1)
+        return pieces[randint(0, 6)](self, 1, 1)
 
     def spawn_piece(self):
         self.piece = self.get_random_piece()
