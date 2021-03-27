@@ -569,7 +569,7 @@ class Board(tk.Canvas):
         if scores:
             top_scores = "Hall of Fame\n\n"
             for i, (name, score) in enumerate(scores):
-                top_scores +=  f"{i+1:>2}. {name[:10]:<10}   {score:>5} pts\n"
+                top_scores += f"{i+1:>2}. {name[:10]:<10}   {score:>5} pts\n"
         else:
             top_scores = "No scores yet"
 
