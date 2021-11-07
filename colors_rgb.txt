@@ -1,0 +1,7 @@
+deep sky blue: 0,191,255
+royal blue: 65,105,225
+orange: 255,165,0
+gold: 255,215,0
+green: 0,128,0
+slate blue: 106,90,205
+orange red: 255,69,0
