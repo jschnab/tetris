@@ -3,12 +3,14 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "debug.h"
 
 
-#define SCREEN_FPS 60
+#define SCREEN_FPS 10
 #define SCREEN_TICKS_PER_FRAME (1000 / SCREEN_FPS)
 
 #define PLAYFIELD_CELL_WIDTH 16
@@ -20,9 +22,10 @@
 #define PLAYFIELD_HEIGHT (PLAYFIELD_CELL_HEIGHT * CELL_WIDTH)
 #define PLAYFIELD_POSITION_X (SCREEN_WIDTH / 2 - PLAYFIELD_WIDTH / 2)
 #define PLAYFIELD_POSITION_Y 50
-#define PIECE_VELOCITY 10
+#define PIECE_VELOCITY 1
 #define PIECE_MATRIX_WIDTH 4
 #define PIECE_MATRIX_HEIGHT 4
+#define NPIECES 7
 
 
 enum SHAPES {I = 1, J, L, O, S, T, Z};
@@ -53,13 +56,117 @@ SDL_Renderer *gRenderer = NULL;
 Texture gCellTexture = {NULL, 0, 0};
 int gPlayfield[PLAYFIELD_CELL_HEIGHT][PLAYFIELD_CELL_WIDTH];
 
+Piece piece_I = {
+    I,
+    0,
+    0,
+    0,
+    0,
+    {
+        {1, 0, 0, 0},
+        {1, 0, 0, 0},
+        {1, 0, 0, 0},
+        {1, 0, 0, 0}
+    }
+};
+
+Piece piece_J = {
+    J,
+    0,
+    0,
+    0,
+    0,
+    {
+        {0, 1, 0, 0},
+        {0, 1, 0, 0},
+        {1, 1, 0, 0},
+        {0, 0, 0, 0}
+    }
+};
+
+Piece piece_L = {
+    L,
+    0,
+    0,
+    0,
+    0,
+    {
+        {1, 0, 0, 0},
+        {1, 0, 0, 0},
+        {1, 1, 0, 0},
+        {0, 0, 0, 0}
+    }
+};
+
+Piece piece_O = {
+    O,
+    0,
+    0,
+    0,
+    0,
+    {
+        {1, 1, 0, 0},
+        {1, 1, 0, 0},
+        {0, 0, 0, 0},
+        {0, 0, 0, 0}
+    }
+};
+
+Piece piece_S = {
+    S,
+    0,
+    0,
+    0,
+    0,
+    {
+        {0, 1, 1, 0},
+        {1, 1, 0, 0},
+        {0, 0, 0, 0},
+        {0, 0, 0, 0}
+    }
+};
+
+Piece piece_T = {
+    T,
+    0,
+    0,
+    0,
+    0,
+    {
+        {0, 1, 0, 0},
+        {1, 1, 1, 0},
+        {0, 0, 0, 0},
+        {0, 0, 0, 0}
+    }
+};
+
+Piece piece_Z = {
+    Z,
+    0,
+    0,
+    0,
+    0,
+    {
+        {1, 1, 0, 0},
+        {0, 1, 1, 0},
+        {0, 0, 0, 0},
+        {0, 0, 0, 0}
+    }
+};
+
 
 void close_all();
 bool initialize();
 bool load_media();
+void piece_handle_event(Piece *, SDL_Event);
+bool piece_move(Piece *);
+Piece *piece_spawn();
+void piece_rotate_anticlock(Piece *);
+void piece_rotate_clock(Piece *);
+void playfield_add_piece(Piece *);
 void playfield_print();
+void playfield_remove_piece(Piece *);
 void playfield_render();
-void playfield_update(Piece *);
 void texture_destroy(Texture *);
 bool texture_from_file(Texture *, char *);
 void texture_render(Texture *, int, int, SDL_Rect *);
@@ -133,12 +240,182 @@ bool load_media() {
 }
 
 
+void piece_handle_event(Piece *p, SDL_Event e) {
+    /* if a key was pressed */
+    if (e.type == SDL_KEYDOWN && e.key.repeat == 0) {
+        /* adjust velocity */
+        switch (e.key.keysym.sym) {
+            case SDLK_DOWN:
+                p->vely += PIECE_VELOCITY;
+                break;
+            case SDLK_LEFT:
+                p->velx -= PIECE_VELOCITY;
+                break;
+            case SDLK_RIGHT:
+                p->velx += PIECE_VELOCITY;
+                break;
+            case SDLK_q:
+                piece_rotate_anticlock(p);
+                break;
+            case SDLK_w:
+                piece_rotate_clock(p);
+                break;
+        }
+    }
+
+    /* if a key was released */
+    else if (e.type == SDL_KEYUP && e.key.repeat == 0) {
+        switch (e.key.keysym.sym) {
+            case SDLK_DOWN:
+                p->vely -= PIECE_VELOCITY;
+                /* make sure that piece will not go up */
+                if (p->vely < 0) {
+                    p->vely = 0;
+                }
+                break;
+            case SDLK_LEFT:
+                p->velx += PIECE_VELOCITY;
+                break;
+            case SDLK_RIGHT:
+                p->velx -= PIECE_VELOCITY;
+                break;
+        }
+    }
+}
+
+
+bool piece_move(Piece *p) {
+    bool collided = false;
+    /* move the piece left or right */
+    p->posx += p->velx;
+    /* if the piece collided or went too far left or right, move back */
+    for (int i = 0; i < PIECE_MATRIX_HEIGHT; i++) {
+        for (int j = 0; j < PIECE_MATRIX_WIDTH; j++) {
+            if (
+                p->matrix[i][j] == 1 &&
+                (
+                    j + p->posx < 0 ||
+                    j + p->posx >= PLAYFIELD_CELL_WIDTH ||
+                    gPlayfield[i + p->posy][j + p->posx] != 0
+                )
+            ) {
+                collided = true;
+            }
+        }
+    }
+    if (collided) {
+        p->posx -= p->velx;
+    }
+    collided = false;
+    /* move the piece down */
+    p->posy += p->vely;
+    /* if the piece collided or went too far down, move back */
+    for (int i = 0; i < PIECE_MATRIX_HEIGHT; i++) {
+        for (int j = 0; j < PIECE_MATRIX_WIDTH; j++) {
+            if (
+                p->matrix[i][j] == 1 &&
+                (
+                    i + p->posy >= PLAYFIELD_CELL_HEIGHT ||
+                    gPlayfield[i + p->posy][j + p->posx] != 0
+                )
+            ) {
+                collided = true;
+            }
+        }
+    }
+    if (collided) {
+        p->posy -= p->vely;
+    }
+    return collided;
+}
+
+
+Piece *piece_spawn(Piece *pieces) {
+    int r = rand() % NPIECES;
+    Piece *p = &pieces[r];
+    p->posx = 8;
+    p->posy = 0;
+    p->velx = 0;
+    p->vely = 0;
+    return p;
+}
+
+
+/* TODO: manage collision during rotation */
+void piece_rotate_anticlock(Piece *p) {
+    int new_matrix[PIECE_MATRIX_WIDTH][PIECE_MATRIX_WIDTH];
+    for (int i = 0; i < PIECE_MATRIX_WIDTH; i++) {
+        for (int j = 0; j < PIECE_MATRIX_WIDTH; j++) {
+            new_matrix[PIECE_MATRIX_WIDTH - 1 - j][i] = p->matrix[i][j];
+        }
+    }
+    for (int i = 0; i < PIECE_MATRIX_WIDTH; i++) {
+        for (int j = 0; j < PIECE_MATRIX_WIDTH; j++) {
+            p->matrix[i][j] = new_matrix[i][j];
+        }
+    }
+}
+
+
+/* TODO: manage collision during rotation */
+void piece_rotate_clock(Piece *p) {
+    int new_matrix[PIECE_MATRIX_WIDTH][PIECE_MATRIX_WIDTH];
+    for (int i = 0; i < PIECE_MATRIX_WIDTH; i++) {
+        for (int j = 0; j < PIECE_MATRIX_WIDTH; j++) {
+            new_matrix[j][PIECE_MATRIX_WIDTH - 1 - i] = p->matrix[i][j];
+        }
+    }
+    for (int i = 0; i < PIECE_MATRIX_WIDTH; i++) {
+        for (int j = 0; j < PIECE_MATRIX_WIDTH; j++) {
+            p->matrix[i][j] = new_matrix[i][j];
+        }
+    }
+}
+
+
+void playfield_add_piece(Piece *piece) {
+    /* iterate over playfied area */
+    for (int i = 0; i < PLAYFIELD_CELL_HEIGHT; i++) {
+        for (int j = 0; j < PLAYFIELD_CELL_WIDTH; j++) {
+            if (
+                j >= piece->posx &&
+                j < piece->posx + PIECE_MATRIX_WIDTH &&
+                i >= piece->posy &&
+                i < piece->posy + PIECE_MATRIX_HEIGHT &&
+                piece->matrix[i - piece->posy][j - piece->posx] == 1
+            ) {
+                gPlayfield[i][j] = piece->shape;
+            }
+        }
+    }
+}
+
+
 void playfield_print() {
+    printf("\n");
     for (int i = 0; i < PLAYFIELD_CELL_HEIGHT; i++) {
         for (int j = 0; j < PLAYFIELD_CELL_WIDTH; j++) {
             printf("%d", gPlayfield[i][j]);
         }
         printf("\n");
+    }
+}
+
+
+void playfield_remove_piece(Piece *piece) {
+    /* iterate over playfied area */
+    for (int i = 0; i < PLAYFIELD_CELL_HEIGHT; i++) {
+        for (int j = 0; j < PLAYFIELD_CELL_WIDTH; j++) {
+            if (
+                j >= piece->posx &&
+                j < piece->posx + PIECE_MATRIX_WIDTH &&
+                i >= piece->posy &&
+                i < piece->posy + PIECE_MATRIX_HEIGHT &&
+                piece->matrix[i - piece->posy][j - piece->posx] == 1
+            ) {
+                gPlayfield[i][j] = 0;
+            }
+        }
     }
 }
 
@@ -159,24 +436,6 @@ void playfield_render() {
                 CELL_WIDTH
             };
             texture_render(&gCellTexture, x, y, &clip);
-        }
-    }
-}
-
-
-void playfield_update(Piece *piece) {
-    /* iterate over playfied area */
-    for (int i = 0; i < PLAYFIELD_CELL_HEIGHT; i++) {
-        for (int j = 0; j < PLAYFIELD_CELL_WIDTH; j++) {
-            if (
-                j >= piece->posx &&
-                j < piece->posx + PIECE_MATRIX_WIDTH &&
-                i >= piece->posy &&
-                i < piece->posy + PIECE_MATRIX_HEIGHT &&
-                piece->matrix[i - piece->posy][j - piece->posx] == 1
-            ) {
-                gPlayfield[i][j] = piece->shape;
-            }
         }
     }
 }
@@ -246,40 +505,44 @@ void timer_stop(Timer *t) {
 
 
 int main(int argc, char *argv[]) {
+    srand(time(NULL));
     check(initialize(), "Failed to initialize");
     check(load_media(), "Failed to load media");
     bool quit = false;
     SDL_Event e;
     Timer cap_timer;
+    Piece pieces[NPIECES] = {piece_I, piece_J, piece_L, piece_O, piece_S, piece_T, piece_Z};
+    Piece *current_piece = piece_spawn(pieces);
+    bool collided;
+
+    bool flag = true;
 
     while (!quit) {
         timer_start(&cap_timer);
-
-        Piece current_piece = {
-            L,
-            1,
-            1,
-            0,
-            0,
-            {
-                {1, 0, 0, 0},
-                {1, 0, 0, 0},
-                {1, 1, 0, 0},
-                {0, 0, 0, 0}
-            }
-        };
 
         while (SDL_PollEvent(&e) != 0) {
             if (e.type == SDL_QUIT) {
                 quit = true;
             }
-            /* handle events and collisions */
+            piece_handle_event(current_piece, e);
         }
 
+        collided = piece_move(current_piece);
         SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
         SDL_RenderClear(gRenderer);
-        playfield_update(&current_piece);
+        playfield_add_piece(current_piece);
+        if (!flag) {
+            playfield_print();
+            flag = true;
+        }
         playfield_render();
+        if (collided) {
+            current_piece = piece_spawn(pieces);
+            playfield_print();
+        }
+        else {
+            playfield_remove_piece(current_piece);
+        }
         SDL_RenderPresent(gRenderer);
 
         /* cap frame rate */
