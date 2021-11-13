@@ -26,9 +26,11 @@
 #define PIECE_MATRIX_WIDTH 4
 #define PIECE_MATRIX_HEIGHT 4
 #define NPIECES 7
+#define FULL_ROWS_PER_LEVEL 12
 
 
 enum SHAPES {I = 1, J, L, O, S, T, Z};
+int POINTS[5] = {0, 50, 150, 350, 1000};
 
 typedef struct texture {
     SDL_Texture *texture;
@@ -37,12 +39,13 @@ typedef struct texture {
 } Texture;
 
 typedef struct piece {
-    int shape;
-    int posx;
-    int posy;
-    int velx;
-    int vely;
-    int matrix[PIECE_MATRIX_HEIGHT][PIECE_MATRIX_WIDTH];
+    int shape; /* shape name */
+    int posx;  /* x-position of top left corner of matrix */
+    int posy;  /* y-position of top left corner of matrix */
+    int velx;  /* velocity along the x-axis */
+    int vely;  /* velocity along the y-axis */
+    int matrix[PIECE_MATRIX_HEIGHT][PIECE_MATRIX_WIDTH];  /* shape representation */
+    bool landed;  /* if piece lands on bottom of playfield or another piece */
 } Piece;
 
 typedef struct timer {
@@ -63,10 +66,10 @@ Piece piece_I = {
     0,
     0,
     {
-        {1, 0, 0, 0},
-        {1, 0, 0, 0},
-        {1, 0, 0, 0},
-        {1, 0, 0, 0}
+        {0, 1, 0, 0},
+        {0, 1, 0, 0},
+        {0, 1, 0, 0},
+        {0, 1, 0, 0}
     }
 };
 
@@ -77,9 +80,9 @@ Piece piece_J = {
     0,
     0,
     {
-        {0, 1, 0, 0},
-        {0, 1, 0, 0},
-        {1, 1, 0, 0},
+        {0, 0, 1, 0},
+        {0, 0, 1, 0},
+        {0, 1, 1, 0},
         {0, 0, 0, 0}
     }
 };
@@ -91,9 +94,9 @@ Piece piece_L = {
     0,
     0,
     {
-        {1, 0, 0, 0},
-        {1, 0, 0, 0},
-        {1, 1, 0, 0},
+        {0, 1, 0, 0},
+        {0, 1, 0, 0},
+        {0, 1, 1, 0},
         {0, 0, 0, 0}
     }
 };
@@ -105,9 +108,9 @@ Piece piece_O = {
     0,
     0,
     {
-        {1, 1, 0, 0},
-        {1, 1, 0, 0},
         {0, 0, 0, 0},
+        {0, 1, 1, 0},
+        {0, 1, 1, 0},
         {0, 0, 0, 0}
     }
 };
@@ -119,9 +122,9 @@ Piece piece_S = {
     0,
     0,
     {
+        {0, 0, 0, 0},
         {0, 1, 1, 0},
         {1, 1, 0, 0},
-        {0, 0, 0, 0},
         {0, 0, 0, 0}
     }
 };
@@ -133,9 +136,9 @@ Piece piece_T = {
     0,
     0,
     {
+        {0, 0, 0, 0},
         {0, 1, 0, 0},
         {1, 1, 1, 0},
-        {0, 0, 0, 0},
         {0, 0, 0, 0}
     }
 };
@@ -147,9 +150,9 @@ Piece piece_Z = {
     0,
     0,
     {
+        {0, 0, 0, 0},
         {1, 1, 0, 0},
         {0, 1, 1, 0},
-        {0, 0, 0, 0},
         {0, 0, 0, 0}
     }
 };
@@ -157,13 +160,16 @@ Piece piece_Z = {
 
 void close_all();
 bool initialize();
+uint32_t level_timer_ticks(int);
 bool load_media();
+bool piece_collided(Piece *);
 void piece_handle_event(Piece *, SDL_Event);
-bool piece_move(Piece *);
+void piece_move(Piece *);
+bool piece_rotate_anticlock(Piece *);
+bool piece_rotate_clock(Piece *);
 Piece *piece_spawn();
-void piece_rotate_anticlock(Piece *);
-void piece_rotate_clock(Piece *);
 void playfield_add_piece(Piece *);
+int playfield_drop_full_rows();
 void playfield_print();
 void playfield_remove_piece(Piece *);
 void playfield_render();
@@ -173,6 +179,8 @@ void texture_render(Texture *, int, int, SDL_Rect *);
 uint32_t timer_get_ticks(Timer *);
 void timer_start(Timer *);
 void timer_stop(Timer *);
+bool update_level(int);
+int update_score(int, int);
 
 
 void close_all() {
@@ -231,6 +239,15 @@ bool initialize() {
 }
 
 
+uint32_t level_timer_ticks(int level) {
+    uint32_t ticks = 1000 - (level - 1) * 100;
+    if (ticks < 0) {
+        return 50;
+    }
+    return ticks;
+}
+
+
 bool load_media() {
     check(texture_from_file(&gCellTexture, "cells.png"), "Failed to load cells texture");
     return true;
@@ -240,7 +257,28 @@ bool load_media() {
 }
 
 
+bool piece_collided(Piece *p) {
+    for (int i = 0; i < PIECE_MATRIX_HEIGHT; i++) {
+        for (int j = 0; j < PIECE_MATRIX_WIDTH; j++) {
+            if (
+                p->matrix[i][j] == 1 &&
+                (
+                    j + p->posx < 0 ||
+                    j + p->posx >= PLAYFIELD_CELL_WIDTH ||
+                    i + p->posy >= PLAYFIELD_CELL_HEIGHT ||
+                    gPlayfield[i + p->posy][j + p->posx] != 0
+                )
+            ) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+
 void piece_handle_event(Piece *p, SDL_Event e) {
+    bool collided = false;
     /* if a key was pressed */
     if (e.type == SDL_KEYDOWN && e.key.repeat == 0) {
         /* adjust velocity */
@@ -255,10 +293,14 @@ void piece_handle_event(Piece *p, SDL_Event e) {
                 p->velx += PIECE_VELOCITY;
                 break;
             case SDLK_q:
-                piece_rotate_anticlock(p);
+                if ((collided = piece_rotate_anticlock(p))) {
+                    piece_rotate_clock(p);
+                }
                 break;
             case SDLK_w:
-                piece_rotate_clock(p);
+                if ((collided = piece_rotate_clock(p))) {
+                    piece_rotate_anticlock(p);
+                }
                 break;
         }
     }
@@ -284,92 +326,65 @@ void piece_handle_event(Piece *p, SDL_Event e) {
 }
 
 
-bool piece_move(Piece *p) {
-    bool collided = false;
+void piece_move(Piece *p) {
     /* move the piece left or right */
     p->posx += p->velx;
     /* if the piece collided or went too far left or right, move back */
-    for (int i = 0; i < PIECE_MATRIX_HEIGHT; i++) {
-        for (int j = 0; j < PIECE_MATRIX_WIDTH; j++) {
-            if (
-                p->matrix[i][j] == 1 &&
-                (
-                    j + p->posx < 0 ||
-                    j + p->posx >= PLAYFIELD_CELL_WIDTH ||
-                    gPlayfield[i + p->posy][j + p->posx] != 0
-                )
-            ) {
-                collided = true;
-            }
-        }
-    }
-    if (collided) {
+    if (piece_collided(p)) {
         p->posx -= p->velx;
     }
-    collided = false;
     /* move the piece down */
     p->posy += p->vely;
-    /* if the piece collided or went too far down, move back */
-    for (int i = 0; i < PIECE_MATRIX_HEIGHT; i++) {
-        for (int j = 0; j < PIECE_MATRIX_WIDTH; j++) {
-            if (
-                p->matrix[i][j] == 1 &&
-                (
-                    i + p->posy >= PLAYFIELD_CELL_HEIGHT ||
-                    gPlayfield[i + p->posy][j + p->posx] != 0
-                )
-            ) {
-                collided = true;
-            }
-        }
-    }
-    if (collided) {
+    /* if the piece collided or went too far down, move back and record it as
+     * 'landed' (will be blocked and new piece will be spawned) */
+    if (piece_collided(p)) {
         p->posy -= p->vely;
+        p->landed = true;
     }
-    return collided;
 }
 
 
 Piece *piece_spawn(Piece *pieces) {
     int r = rand() % NPIECES;
     Piece *p = &pieces[r];
-    p->posx = 8;
+    p->posx = 6;
     p->posy = 0;
     p->velx = 0;
     p->vely = 0;
+    p->landed = false;
     return p;
 }
 
 
-/* TODO: manage collision during rotation */
-void piece_rotate_anticlock(Piece *p) {
-    int new_matrix[PIECE_MATRIX_WIDTH][PIECE_MATRIX_WIDTH];
-    for (int i = 0; i < PIECE_MATRIX_WIDTH; i++) {
+bool piece_rotate_anticlock(Piece *p) {
+    int new_matrix[PIECE_MATRIX_HEIGHT][PIECE_MATRIX_WIDTH];
+    for (int i = 0; i < PIECE_MATRIX_HEIGHT; i++) {
         for (int j = 0; j < PIECE_MATRIX_WIDTH; j++) {
             new_matrix[PIECE_MATRIX_WIDTH - 1 - j][i] = p->matrix[i][j];
         }
     }
-    for (int i = 0; i < PIECE_MATRIX_WIDTH; i++) {
+    for (int i = 0; i < PIECE_MATRIX_HEIGHT; i++) {
         for (int j = 0; j < PIECE_MATRIX_WIDTH; j++) {
             p->matrix[i][j] = new_matrix[i][j];
         }
     }
+    return piece_collided(p);
 }
 
 
-/* TODO: manage collision during rotation */
-void piece_rotate_clock(Piece *p) {
-    int new_matrix[PIECE_MATRIX_WIDTH][PIECE_MATRIX_WIDTH];
+bool piece_rotate_clock(Piece *p) {
+    int new_matrix[PIECE_MATRIX_HEIGHT][PIECE_MATRIX_WIDTH];
     for (int i = 0; i < PIECE_MATRIX_WIDTH; i++) {
-        for (int j = 0; j < PIECE_MATRIX_WIDTH; j++) {
+        for (int j = 0; j < PIECE_MATRIX_HEIGHT; j++) {
             new_matrix[j][PIECE_MATRIX_WIDTH - 1 - i] = p->matrix[i][j];
         }
     }
-    for (int i = 0; i < PIECE_MATRIX_WIDTH; i++) {
+    for (int i = 0; i < PIECE_MATRIX_HEIGHT; i++) {
         for (int j = 0; j < PIECE_MATRIX_WIDTH; j++) {
             p->matrix[i][j] = new_matrix[i][j];
         }
     }
+    return piece_collided(p);
 }
 
 
@@ -388,6 +403,70 @@ void playfield_add_piece(Piece *piece) {
             }
         }
     }
+}
+
+
+int playfield_drop_full_rows() {
+    bool flag = false;  /* true if full rows detected */
+    int i, j, k;
+    int nrows = 0;  /* number of full rows, for score keeping */
+
+    /* full_rows: array to store index of full rows */
+    int full_rows[PLAYFIELD_CELL_HEIGHT], ptr;
+    for (ptr = 0; ptr < PLAYFIELD_CELL_HEIGHT; ptr++) {
+        full_rows[ptr] = -99; /* sentinel value */
+    }
+
+    /* get index of full rows */
+    ptr = 0;
+    for (i = PLAYFIELD_CELL_HEIGHT - 1; i >= 0; i--) {
+        for (j = 0; j < PLAYFIELD_CELL_WIDTH; j++) {
+            if (gPlayfield[i][j] == 0) {
+                break;
+            }
+        }
+        /* if we arrived at the end of the row without breaking then this is a
+         * full row */
+        if (j == PLAYFIELD_CELL_WIDTH) {
+            flag = true;
+            full_rows[ptr++] = i;
+        }
+    }
+    nrows = ptr;
+
+    /* fill playfield and skip full rows if there are any */
+    if (flag == false) {
+        return nrows;
+    }
+    /*
+    printf("there are full rows: ");
+    for (ptr = 0; ptr < PLAYFIELD_CELL_HEIGHT; ptr++) {
+        if (full_rows[ptr] == -99) {
+            break;
+        }
+        printf("%d ", full_rows[ptr]);
+    }
+    printf("\n");
+    */
+    ptr = 0;
+    k = PLAYFIELD_CELL_HEIGHT - 1;
+    for (i = PLAYFIELD_CELL_HEIGHT - 1; i >= 0; i--, k--) {
+        /* skip full rows */
+        while (ptr < PLAYFIELD_CELL_HEIGHT && k == full_rows[ptr]) {
+            k--;
+            ptr++;
+        }
+        for (j = 0; j < PLAYFIELD_CELL_WIDTH; j++) {
+            if (k < 0) {
+                gPlayfield[i][j] = 0;
+            }
+            else {
+                gPlayfield[i][j] = gPlayfield[k][j];
+            }
+        }
+    }
+
+    return nrows;
 }
 
 
@@ -504,22 +583,40 @@ void timer_stop(Timer *t) {
 }
 
 
+bool update_level(int total_rows) {
+    if (total_rows < FULL_ROWS_PER_LEVEL) {
+        return false;
+    }
+    return total_rows % FULL_ROWS_PER_LEVEL <= 3;
+}
+
+
+int update_score(int level, int nrows) {
+    return level * POINTS[nrows];
+}
+
+
 int main(int argc, char *argv[]) {
     srand(time(NULL));
     check(initialize(), "Failed to initialize");
     check(load_media(), "Failed to load media");
     bool quit = false;
     SDL_Event e;
-    Timer cap_timer;
+    Timer frame_timer;
+    Timer game_timer;
+    int level = 1;
+    int score = 0;
+    int nrows = 0;  /* number of full rows achieved when a piece lands */
+    int total_rows = 0;  /* total number of full rows made in the game */
     Piece pieces[NPIECES] = {piece_I, piece_J, piece_L, piece_O, piece_S, piece_T, piece_Z};
     Piece *current_piece = piece_spawn(pieces);
-    bool collided;
 
-    bool flag = true;
+    timer_start(&game_timer);
 
     while (!quit) {
-        timer_start(&cap_timer);
+        timer_start(&frame_timer);
 
+        /* handle events and movements */
         while (SDL_PollEvent(&e) != 0) {
             if (e.type == SDL_QUIT) {
                 quit = true;
@@ -527,26 +624,41 @@ int main(int argc, char *argv[]) {
             piece_handle_event(current_piece, e);
         }
 
-        collided = piece_move(current_piece);
+        /* descend piece */
+        if (timer_get_ticks(&game_timer) > level_timer_ticks(level)) {
+            timer_start(&game_timer);
+            /* descend only if piece is not already moving down */
+            if (current_piece->vely == 0) {
+                current_piece->vely += PIECE_VELOCITY;
+                piece_move(current_piece);
+                current_piece->vely -= PIECE_VELOCITY;
+            }
+        }
+
+        piece_move(current_piece);
+
+        /* update the playfield and draw it */
+        playfield_add_piece(current_piece);
         SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
         SDL_RenderClear(gRenderer);
-        playfield_add_piece(current_piece);
-        if (!flag) {
-            playfield_print();
-            flag = true;
-        }
         playfield_render();
-        if (collided) {
+        if (current_piece->landed) {
+            nrows = playfield_drop_full_rows();
+            total_rows += nrows;
+            score += update_score(level, nrows);
+            if (nrows != 0 && update_level(total_rows)) {
+                level++;
+            }
             current_piece = piece_spawn(pieces);
-            playfield_print();
         }
         else {
             playfield_remove_piece(current_piece);
         }
+
         SDL_RenderPresent(gRenderer);
 
         /* cap frame rate */
-        int frame_ticks = timer_get_ticks(&cap_timer);
+        int frame_ticks = timer_get_ticks(&frame_timer);
         if (frame_ticks < SCREEN_TICKS_PER_FRAME) {
             SDL_Delay(SCREEN_TICKS_PER_FRAME - frame_ticks);
         }
