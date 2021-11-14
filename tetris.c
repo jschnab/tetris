@@ -1,5 +1,6 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
+#include <SDL2/SDL_mixer.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -12,7 +13,6 @@
 
 #define SCREEN_FPS 10
 #define SCREEN_TICKS_PER_FRAME (1000 / SCREEN_FPS)
-
 #define PLAYFIELD_CELL_WIDTH 16
 #define PLAYFIELD_CELL_HEIGHT 24
 #define SCREEN_WIDTH 640
@@ -28,9 +28,6 @@
 #define NPIECES 7
 #define FULL_ROWS_PER_LEVEL 12
 
-
-enum SHAPES {I = 1, J, L, O, S, T, Z};
-int POINTS[5] = {0, 50, 150, 350, 1000};
 
 typedef struct texture {
     SDL_Texture *texture;
@@ -54,10 +51,24 @@ typedef struct timer {
 } Timer;
 
 
+char *CELL_TILES = "cells.png";
+char *CLEAR_ROW_ONE = "sounds/clear_one.wav";
+char *CLEAR_ROW_TWO = "sounds/clear_two.wav";
+char *CLEAR_ROW_THREE = "sounds/clear_three.wav";
+char *CLEAR_ROW_FOUR = "sounds/clear_four.wav";
+char *PIECE_LANDED = "sounds/landed.wav";
+int POINTS[5] = {0, 50, 150, 350, 1000};
+enum SHAPES {I = 1, J, L, O, S, T, Z};
+
 SDL_Window *gWindow = NULL;
 SDL_Renderer *gRenderer = NULL;
 Texture gCellTexture = {NULL, 0, 0};
 int gPlayfield[PLAYFIELD_CELL_HEIGHT][PLAYFIELD_CELL_WIDTH];
+Mix_Chunk *gPieceLanded = NULL;
+Mix_Chunk *gClearRowOne = NULL;
+Mix_Chunk *gClearRowTwo = NULL;
+Mix_Chunk *gClearRowThree = NULL;
+Mix_Chunk *gClearRowFour = NULL;
 
 Piece piece_I = {
     I,
@@ -185,10 +196,21 @@ int update_score(int, int);
 
 void close_all() {
     texture_destroy(&gCellTexture);
+    Mix_FreeChunk(gPieceLanded);
+    gPieceLanded = NULL;
+    Mix_FreeChunk(gClearRowOne);
+    gClearRowOne = NULL;
+    Mix_FreeChunk(gClearRowTwo);
+    gClearRowTwo = NULL;
+    Mix_FreeChunk(gClearRowThree);
+    gClearRowThree = NULL;
+    Mix_FreeChunk(gClearRowFour);
+    gClearRowFour = NULL;
     SDL_DestroyRenderer(gRenderer);
     gRenderer = NULL;
     SDL_DestroyWindow(gWindow);
     gWindow = NULL;
+    Mix_Quit();
     IMG_Quit();
     SDL_Quit();
 }
@@ -196,7 +218,7 @@ void close_all() {
 
 bool initialize() {
     check(
-        SDL_Init(SDL_INIT_VIDEO) == 0,
+        SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) == 0,
         "Failed to initialize SDL: %s",
         SDL_GetError()
     );
@@ -226,6 +248,11 @@ bool initialize() {
         "Failed to initialize SDL_image: %s",
         IMG_GetError()
     );
+    check(
+        Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) == 0,
+        "SDL_mixer could not initialize: %s",
+        Mix_GetError()
+    );
 
     for (int i = 0; i < PLAYFIELD_CELL_HEIGHT; i++) {
         for (int j = 0; j < PLAYFIELD_CELL_WIDTH; j++) {
@@ -249,7 +276,15 @@ uint32_t level_timer_ticks(int level) {
 
 
 bool load_media() {
-    check(texture_from_file(&gCellTexture, "cells.png"), "Failed to load cells texture");
+    check(
+        texture_from_file(&gCellTexture, CELL_TILES),
+        "Failed to load cells texture"
+    );
+    gPieceLanded = Mix_LoadWAV(PIECE_LANDED);
+    gClearRowOne = Mix_LoadWAV(CLEAR_ROW_ONE);
+    gClearRowTwo = Mix_LoadWAV(CLEAR_ROW_TWO);
+    gClearRowThree = Mix_LoadWAV(CLEAR_ROW_THREE);
+    gClearRowFour = Mix_LoadWAV(CLEAR_ROW_FOUR);
     return true;
 
     error:
@@ -340,6 +375,7 @@ void piece_move(Piece *p) {
     if (piece_collided(p)) {
         p->posy -= p->vely;
         p->landed = true;
+        Mix_PlayChannel(-1, gPieceLanded, 0);
     }
 }
 
@@ -433,6 +469,21 @@ int playfield_drop_full_rows() {
         }
     }
     nrows = ptr;
+
+    switch (nrows) {
+        case 1:
+            Mix_PlayChannel(-1, gClearRowOne, 0);
+            break;
+        case 2:
+            Mix_PlayChannel(-1, gClearRowTwo, 0);
+            break;
+        case 3:
+            Mix_PlayChannel(-1, gClearRowThree, 0);
+            break;
+        case 4:
+            Mix_PlayChannel(-1, gClearRowFour, 0);
+            break;
+    }
 
     /* fill playfield and skip full rows if there are any */
     if (flag == false) {

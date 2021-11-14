@@ -4,7 +4,7 @@ CC = gcc
 
 COMPILER_FLAGS = -Wall -DNDEBUG
 
-LINKER_FLAGS = -lSDL2 -lSDL2_image
+LINKER_FLAGS = -lSDL2 -lSDL2_image -lSDL2_mixer
 
 OBJ_NAME = tetris
 
