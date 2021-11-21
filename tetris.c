@@ -1,6 +1,7 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include <SDL2/SDL_mixer.h>
+#include <SDL2/SDL_ttf.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -15,13 +16,18 @@
 #define SCREEN_TICKS_PER_FRAME (1000 / SCREEN_FPS)
 #define PLAYFIELD_CELL_WIDTH 16
 #define PLAYFIELD_CELL_HEIGHT 24
-#define SCREEN_WIDTH 640
-#define SCREEN_HEIGHT 480
 #define CELL_WIDTH 16
 #define PLAYFIELD_WIDTH (PLAYFIELD_CELL_WIDTH * CELL_WIDTH)
 #define PLAYFIELD_HEIGHT (PLAYFIELD_CELL_HEIGHT * CELL_WIDTH)
-#define PLAYFIELD_POSITION_X (SCREEN_WIDTH / 2 - PLAYFIELD_WIDTH / 2)
-#define PLAYFIELD_POSITION_Y 50
+#define SCREEN_WIDTH (PLAYFIELD_WIDTH * 2.5)
+#define SCREEN_HEIGHT (PLAYFIELD_HEIGHT * 1.1)
+#define INFOFIELD_WIDTH PLAYFIELD_WIDTH
+#define INFOFIELD_HEIGHT PLAYFIELD_HEIGHT
+#define PLAYFIELD_POSITION_X (SCREEN_WIDTH / 2 - PLAYFIELD_WIDTH)
+#define PLAYFIELD_POSITION_Y (SCREEN_HEIGHT / 2 - PLAYFIELD_HEIGHT / 2)
+#define INFOFIELD_POSITION_X (SCREEN_WIDTH / 2 + INFOFIELD_WIDTH / 4) 
+#define INFOFIELD_POSITION_Y (SCREEN_HEIGHT / 2 - INFOFIELD_HEIGHT / 2)
+#define FONTSIZE 16
 #define PIECE_VELOCITY 1
 #define PIECE_MATRIX_WIDTH 4
 #define PIECE_MATRIX_HEIGHT 4
@@ -69,6 +75,11 @@ Mix_Chunk *gClearRowOne = NULL;
 Mix_Chunk *gClearRowTwo = NULL;
 Mix_Chunk *gClearRowThree = NULL;
 Mix_Chunk *gClearRowFour = NULL;
+TTF_Font *gFont = NULL;
+Texture gScoreInfoTexture = {NULL, 0, 0};
+Texture gLevelInfoTexture = {NULL, 0, 0};
+Texture gTotalRowsInfoTexture = {NULL, 0, 0};
+
 
 Piece piece_I = {
     I,
@@ -186,6 +197,7 @@ void playfield_remove_piece(Piece *);
 void playfield_render();
 void texture_destroy(Texture *);
 bool texture_from_file(Texture *, char *);
+bool texture_from_text(Texture *, char *, SDL_Color);
 void texture_render(Texture *, int, int, SDL_Rect *);
 uint32_t timer_get_ticks(Timer *);
 void timer_start(Timer *);
@@ -196,6 +208,8 @@ int update_score(int, int);
 
 void close_all() {
     texture_destroy(&gCellTexture);
+    TTF_CloseFont(gFont);
+    gFont = NULL;
     Mix_FreeChunk(gPieceLanded);
     gPieceLanded = NULL;
     Mix_FreeChunk(gClearRowOne);
@@ -253,6 +267,11 @@ bool initialize() {
         "SDL_mixer could not initialize: %s",
         Mix_GetError()
     );
+    check(
+        TTF_Init() == 0,
+        "SDL_ttf failed to initialize: %s",
+        TTF_GetError()
+    );
 
     for (int i = 0; i < PLAYFIELD_CELL_HEIGHT; i++) {
         for (int j = 0; j < PLAYFIELD_CELL_WIDTH; j++) {
@@ -285,6 +304,8 @@ bool load_media() {
     gClearRowTwo = Mix_LoadWAV(CLEAR_ROW_TWO);
     gClearRowThree = Mix_LoadWAV(CLEAR_ROW_THREE);
     gClearRowFour = Mix_LoadWAV(CLEAR_ROW_FOUR);
+    gFont = TTF_OpenFont("fonts/OpenSans-Regular.ttf", FONTSIZE);
+    check_mem(gFont);
     return true;
 
     error:
@@ -603,6 +624,22 @@ bool texture_from_file(Texture *t, char *path) {
 }
 
 
+bool texture_from_text(Texture *t, char *text, SDL_Color color) {
+    texture_destroy(t);
+    SDL_Surface *text_surface = TTF_RenderText_Solid(gFont, text, color);
+    check_mem(text_surface);
+    t->texture = SDL_CreateTextureFromSurface(gRenderer, text_surface);
+    check_mem(t->texture);
+    t->width = text_surface->w;
+    t->height = text_surface->h;
+    SDL_FreeSurface(text_surface);
+    return true;
+
+    error:
+        return false;
+}
+
+
 void texture_render(Texture *t, int x, int y, SDL_Rect *clip) {
     SDL_Rect render_quad = {x, y, t->width, t->height};
     if (clip != NULL) {
@@ -655,10 +692,14 @@ int main(int argc, char *argv[]) {
     SDL_Event e;
     Timer frame_timer;
     Timer game_timer;
-    int level = 1;
     int score = 0;
+    int level = 1;
     int nrows = 0;  /* number of full rows achieved when a piece lands */
     int total_rows = 0;  /* total number of full rows made in the game */
+    char score_text[40];
+    char level_text[40];
+    char total_rows_text[40];
+    SDL_Color text_color = {0, 0, 0, 255};
     Piece pieces[NPIECES] = {piece_I, piece_J, piece_L, piece_O, piece_S, piece_T, piece_Z};
     Piece *current_piece = piece_spawn(pieces);
 
@@ -675,7 +716,7 @@ int main(int argc, char *argv[]) {
             piece_handle_event(current_piece, e);
         }
 
-        /* descend piece */
+        /* descend piece on playfield */
         if (timer_get_ticks(&game_timer) > level_timer_ticks(level)) {
             timer_start(&game_timer);
             /* descend only if piece is not already moving down */
@@ -688,10 +729,11 @@ int main(int argc, char *argv[]) {
 
         piece_move(current_piece);
 
-        /* update the playfield and draw it */
-        playfield_add_piece(current_piece);
         SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
         SDL_RenderClear(gRenderer);
+
+        /* update the playfield and draw it */
+        playfield_add_piece(current_piece);
         playfield_render();
         if (current_piece->landed) {
             nrows = playfield_drop_full_rows();
@@ -705,6 +747,41 @@ int main(int argc, char *argv[]) {
         else {
             playfield_remove_piece(current_piece);
         }
+
+        /* print information (score, ...) */
+        sprintf(score_text, "Score: %d", score);
+        sprintf(level_text, "Level: %d", level);
+        sprintf(total_rows_text, "Total rows: %d", total_rows);
+        check(
+            texture_from_text(&gScoreInfoTexture, score_text, text_color),
+            "Failed to render score info texture"
+        );
+        check(
+            texture_from_text(&gLevelInfoTexture, level_text, text_color),
+            "Failed to render level info texture"
+        );
+        check(
+            texture_from_text(&gTotalRowsInfoTexture, total_rows_text, text_color),
+            "Failed to render total rows info texture"
+        );
+        texture_render(
+            &gScoreInfoTexture,
+            INFOFIELD_POSITION_X,
+            INFOFIELD_POSITION_Y,
+            NULL
+        );
+        texture_render(
+            &gLevelInfoTexture,
+            INFOFIELD_POSITION_X,
+            INFOFIELD_POSITION_Y + FONTSIZE * 1.25,
+            NULL
+        );
+        texture_render(
+            &gTotalRowsInfoTexture,
+            INFOFIELD_POSITION_X,
+            INFOFIELD_POSITION_Y + 2 * FONTSIZE * 1.25,
+            NULL
+        );
 
         SDL_RenderPresent(gRenderer);
 
