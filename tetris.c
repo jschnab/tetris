@@ -32,7 +32,7 @@
 #define PIECE_MATRIX_WIDTH 4
 #define PIECE_MATRIX_HEIGHT 4
 #define NPIECES 7
-#define FULL_ROWS_PER_LEVEL 12
+#define FULL_ROWS_PER_LEVEL 8
 
 
 typedef struct texture {
@@ -202,7 +202,7 @@ void texture_render(Texture *, int, int, SDL_Rect *);
 uint32_t timer_get_ticks(Timer *);
 void timer_start(Timer *);
 void timer_stop(Timer *);
-bool update_level(int);
+bool update_level(int, int);
 int update_score(int, int);
 
 
@@ -671,11 +671,8 @@ void timer_stop(Timer *t) {
 }
 
 
-bool update_level(int total_rows) {
-    if (total_rows < FULL_ROWS_PER_LEVEL) {
-        return false;
-    }
-    return total_rows % FULL_ROWS_PER_LEVEL <= 3;
+bool update_level(int current_level, int total_rows) {
+    return total_rows >= current_level * FULL_ROWS_PER_LEVEL;
 }
 
 
@@ -739,10 +736,14 @@ int main(int argc, char *argv[]) {
             nrows = playfield_drop_full_rows();
             total_rows += nrows;
             score += update_score(level, nrows);
-            if (nrows != 0 && update_level(total_rows)) {
+            if (nrows != 0 && update_level(level, total_rows)) {
                 level++;
             }
             current_piece = piece_spawn(pieces);
+            /* if piece is spawned over anoter piece the game is over */
+            if (piece_collided(current_piece)) {
+                quit = true;
+            }
         }
         else {
             playfield_remove_piece(current_piece);
@@ -791,6 +792,13 @@ int main(int argc, char *argv[]) {
             SDL_Delay(SCREEN_TICKS_PER_FRAME - frame_ticks);
         }
     }
+
+    SDL_ShowSimpleMessageBox(
+        SDL_MESSAGEBOX_INFORMATION,
+        "Game Over",
+        score_text,
+        gWindow
+    );
 
     close_all();
     return 0;
