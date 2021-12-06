@@ -510,16 +510,6 @@ int playfield_drop_full_rows() {
     if (flag == false) {
         return nrows;
     }
-    /*
-    printf("there are full rows: ");
-    for (ptr = 0; ptr < PLAYFIELD_CELL_HEIGHT; ptr++) {
-        if (full_rows[ptr] == -99) {
-            break;
-        }
-        printf("%d ", full_rows[ptr]);
-    }
-    printf("\n");
-    */
     ptr = 0;
     k = PLAYFIELD_CELL_HEIGHT - 1;
     for (i = PLAYFIELD_CELL_HEIGHT - 1; i >= 0; i--, k--) {
