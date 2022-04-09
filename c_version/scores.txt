@@ -1,0 +1,10 @@
+julian;2134
+ida;1023
+hector;9012
+gerald;8901
+filip;7890
+eric;5678
+derek;4567
+charlie;3456
+bob;2345
+alice;1234
