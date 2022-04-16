@@ -21,6 +21,8 @@
 #define PLAYFIELD_HEIGHT (PLAYFIELD_CELL_HEIGHT * CELL_WIDTH)
 #define SCREEN_WIDTH (PLAYFIELD_WIDTH * 2.5)
 #define SCREEN_HEIGHT (PLAYFIELD_HEIGHT * 1.1)
+#define INPUT_WINDOW_WIDTH 400
+#define INPUT_WINDOW_HEIGHT 400
 #define INFOFIELD_WIDTH PLAYFIELD_WIDTH
 #define INFOFIELD_HEIGHT PLAYFIELD_HEIGHT
 #define PLAYFIELD_POSITION_X (SCREEN_WIDTH / 2 - PLAYFIELD_WIDTH)
@@ -33,6 +35,8 @@
 #define PIECE_MATRIX_HEIGHT 4
 #define NPIECES 7
 #define FULL_ROWS_PER_LEVEL 8
+#define PLAYER_NAME_LENGTH 20
+#define NUMBER_HIGH_SCORES 10
 
 
 typedef struct texture {
@@ -56,6 +60,11 @@ typedef struct timer {
     bool started;
 } Timer;
 
+typedef struct score {
+    char name[PLAYER_NAME_LENGTH];
+    uint32_t score;
+} Score;
+
 
 char *CELL_TILES = "cells.png";
 char *CLEAR_ROW_ONE = "sounds/clear_one.wav";
@@ -63,11 +72,14 @@ char *CLEAR_ROW_TWO = "sounds/clear_two.wav";
 char *CLEAR_ROW_THREE = "sounds/clear_three.wav";
 char *CLEAR_ROW_FOUR = "sounds/clear_four.wav";
 char *PIECE_LANDED = "sounds/landed.wav";
+char *HIGH_SCORES_FILE = "highscores.txt";
 int POINTS[5] = {0, 50, 150, 350, 1000};
 enum SHAPES {I = 1, J, L, O, S, T, Z};
 
 SDL_Window *gWindow = NULL;
 SDL_Renderer *gRenderer = NULL;
+SDL_Window *gInputWindow = NULL;
+SDL_Renderer *gInputRenderer = NULL;
 Texture gCellTexture = {NULL, 0, 0};
 int gPlayfield[PLAYFIELD_CELL_HEIGHT][PLAYFIELD_CELL_WIDTH];
 Mix_Chunk *gPieceLanded = NULL;
@@ -79,6 +91,10 @@ TTF_Font *gFont = NULL;
 Texture gScoreInfoTexture = {NULL, 0, 0};
 Texture gLevelInfoTexture = {NULL, 0, 0};
 Texture gTotalRowsInfoTexture = {NULL, 0, 0};
+Texture gPlayerPromptTexture = {NULL, 0, 0};
+Texture gPlayerNameTexture = {NULL, 0, 0};
+Score gHighScores[NUMBER_HIGH_SCORES + 1]; /* include current game's score */
+int gNumberHighScores = 0;
 
 
 Piece piece_I = {
@@ -181,6 +197,9 @@ Piece piece_Z = {
 
 
 void close_all();
+void highscores_read();
+void highscores_sort();
+void highscores_write();
 bool initialize();
 uint32_t level_timer_ticks(int);
 bool load_media();
@@ -195,10 +214,11 @@ int playfield_drop_full_rows();
 void playfield_print();
 void playfield_remove_piece(Piece *);
 void playfield_render();
+bool start_input_window();
 void texture_destroy(Texture *);
 bool texture_from_file(Texture *, char *);
-bool texture_from_text(Texture *, char *, SDL_Color);
-void texture_render(Texture *, int, int, SDL_Rect *);
+bool texture_from_text(Texture *, char *, SDL_Color, SDL_Renderer *);
+void texture_render(Texture *, int, int, SDL_Rect *, SDL_Renderer *);
 uint32_t timer_get_ticks(Timer *);
 void timer_start(Timer *);
 void timer_stop(Timer *);
@@ -227,6 +247,61 @@ void close_all() {
     Mix_Quit();
     IMG_Quit();
     SDL_Quit();
+}
+
+
+void highscores_read() {
+    FILE *fp = fopen(HIGH_SCORES_FILE, "r");
+    check_mem(fp);
+    char *string = NULL;
+    size_t size = PLAYER_NAME_LENGTH + 1;  /* string is null-terminated */
+    size_t read;
+    char *token;
+    char delim[2] = ";";
+
+    for (int i = 1; (read = getline(&string, &size, fp)) != -1; i++) {
+        string[read - 1] = '\0';  /* discard newline character */
+        token = strtok(string, delim);
+        memcpy(gHighScores[i].name, token, PLAYER_NAME_LENGTH);
+        token = strtok(NULL, delim);
+        gHighScores[i].score = atoi(token);
+        gNumberHighScores++;
+    }
+
+    free(string);
+    fclose(fp);
+    return;
+
+    error:
+        free(string);
+        fclose(fp);
+}
+
+
+void highscores_sort() {
+    Score key;
+    int j;
+    for (int i = 1; i < gNumberHighScores; i++) {
+        key = gHighScores[i];
+        for (j = i - 1; j >= 0 && gHighScores[j].score < key.score; j--) {
+            gHighScores[j + 1] = gHighScores[j];
+        }
+        gHighScores[j + 1] = key;
+    }
+}
+
+
+void highscores_write() {
+    FILE *fp = fopen(HIGH_SCORES_FILE, "w");
+    check_mem(fp);
+    for (int i = 0; i < gNumberHighScores; i++) {
+        fprintf(fp, "%s;%d\n", gHighScores[i].name, gHighScores[i].score);
+    }
+    fclose(fp);
+    return;
+
+    error:
+        fclose(fp);
 }
 
 
@@ -576,9 +651,33 @@ void playfield_render() {
                 CELL_WIDTH,
                 CELL_WIDTH
             };
-            texture_render(&gCellTexture, x, y, &clip);
+            texture_render(&gCellTexture, x, y, &clip, gRenderer);
         }
     }
+}
+
+
+bool start_input_window() {
+    gInputWindow = SDL_CreateWindow(
+        "Game Over!",
+        SDL_WINDOWPOS_UNDEFINED,
+        SDL_WINDOWPOS_UNDEFINED,
+        INPUT_WINDOW_WIDTH,
+        INPUT_WINDOW_HEIGHT,
+        0
+    );
+    check_mem(gInputWindow);
+    gInputRenderer = SDL_CreateRenderer(
+        gInputWindow,
+        -1,
+        SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC
+    );
+    check_mem(gInputRenderer);
+    SDL_SetRenderDrawColor(gInputRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
+    return true;
+
+    error:
+        return false;
 }
 
 
@@ -614,11 +713,11 @@ bool texture_from_file(Texture *t, char *path) {
 }
 
 
-bool texture_from_text(Texture *t, char *text, SDL_Color color) {
+bool texture_from_text(Texture *t, char *text, SDL_Color color, SDL_Renderer *renderer) {
     texture_destroy(t);
     SDL_Surface *text_surface = TTF_RenderText_Solid(gFont, text, color);
     check_mem(text_surface);
-    t->texture = SDL_CreateTextureFromSurface(gRenderer, text_surface);
+    t->texture = SDL_CreateTextureFromSurface(renderer, text_surface);
     check_mem(t->texture);
     t->width = text_surface->w;
     t->height = text_surface->h;
@@ -630,13 +729,13 @@ bool texture_from_text(Texture *t, char *text, SDL_Color color) {
 }
 
 
-void texture_render(Texture *t, int x, int y, SDL_Rect *clip) {
+void texture_render(Texture *t, int x, int y, SDL_Rect *clip, SDL_Renderer *renderer) {
     SDL_Rect render_quad = {x, y, t->width, t->height};
     if (clip != NULL) {
         render_quad.w = clip->w;
         render_quad.h = clip->h;
     }
-    SDL_RenderCopy(gRenderer, t->texture, clip, &render_quad);
+    SDL_RenderCopy(renderer, t->texture, clip, &render_quad);
 }
 
 
@@ -684,6 +783,9 @@ int main(int argc, char *argv[]) {
     int nrows = 0;  /* number of full rows achieved when a piece lands */
     int total_rows = 0;  /* total number of full rows made in the game */
     char score_text[40];
+    char player_name[PLAYER_NAME_LENGTH] = "";  /* stored in the high scores list */
+    char high_scores[1000];
+    gNumberHighScores = 1;  /* we have at least the current game's score */
     char level_text[40];
     char total_rows_text[40];
     SDL_Color text_color = {0, 0, 0, 255};
@@ -744,34 +846,42 @@ int main(int argc, char *argv[]) {
         sprintf(level_text, "Level: %d", level);
         sprintf(total_rows_text, "Total rows: %d", total_rows);
         check(
-            texture_from_text(&gScoreInfoTexture, score_text, text_color),
+            texture_from_text(&gScoreInfoTexture, score_text, text_color, gRenderer),
             "Failed to render score info texture"
         );
         check(
-            texture_from_text(&gLevelInfoTexture, level_text, text_color),
+            texture_from_text(&gLevelInfoTexture, level_text, text_color, gRenderer),
             "Failed to render level info texture"
         );
         check(
-            texture_from_text(&gTotalRowsInfoTexture, total_rows_text, text_color),
+            texture_from_text(
+                &gTotalRowsInfoTexture,
+                total_rows_text,
+                text_color,
+                gRenderer
+            ),
             "Failed to render total rows info texture"
         );
         texture_render(
             &gScoreInfoTexture,
             INFOFIELD_POSITION_X,
             INFOFIELD_POSITION_Y,
-            NULL
+            NULL,
+            gRenderer
         );
         texture_render(
             &gLevelInfoTexture,
             INFOFIELD_POSITION_X,
             INFOFIELD_POSITION_Y + FONTSIZE * 1.25,
-            NULL
+            NULL,
+            gRenderer
         );
         texture_render(
             &gTotalRowsInfoTexture,
             INFOFIELD_POSITION_X,
             INFOFIELD_POSITION_Y + 2 * FONTSIZE * 1.25,
-            NULL
+            NULL,
+            gRenderer
         );
 
         SDL_RenderPresent(gRenderer);
@@ -782,6 +892,113 @@ int main(int argc, char *argv[]) {
             SDL_Delay(SCREEN_TICKS_PER_FRAME - frame_ticks);
         }
     }
+
+
+    /* get player player name for high scores board */
+    check(start_input_window(), "Input window failed to start");
+    quit = false;
+    bool render_text = false;
+    check(
+        texture_from_text(
+            &gPlayerPromptTexture,
+            "Enter your name:",
+            text_color,
+            gInputRenderer
+        ),
+        "Failed to render player prompt texture"
+    );
+    check(
+        texture_from_text(&gPlayerNameTexture, " ", text_color, gInputRenderer),
+        "Failed to render player name texture"
+    );
+    SDL_StartTextInput();
+
+    while (!quit) {
+        timer_start(&frame_timer);
+        render_text = false;
+
+        while (SDL_PollEvent(&e) != 0) {
+            if (e.type == SDL_WINDOWEVENT && e.window.event == SDL_WINDOWEVENT_CLOSE) {
+                quit = true;
+            }
+            if (e.type == SDL_KEYDOWN) {
+                /* handle backspace */
+                if (e.key.keysym.sym == SDLK_BACKSPACE && strlen(player_name) > 0) {
+                    player_name[strlen(player_name) - 1] = '\0';
+                    render_text = true;
+                }
+            }
+            /* text input */
+            else if (e.type == SDL_TEXTINPUT) {
+                if (strlen(player_name) < PLAYER_NAME_LENGTH) {
+                    strcat(player_name, e.text.text);
+                    render_text = true;
+                }
+            }
+        }
+
+        if (render_text) {
+            if (strlen(player_name) > 0) {
+                check(
+                    texture_from_text(
+                        &gPlayerNameTexture,
+                        player_name,
+                        text_color,
+                        gInputRenderer
+                    ),
+                    "Failed to render player name texture"
+                );
+            }
+            else {
+                check(
+                    texture_from_text(
+                        &gPlayerNameTexture,
+                        " ",
+                        text_color,
+                        gInputRenderer
+                    ),
+                    "Failed to render player name texture"
+                );
+            }
+        }
+
+        SDL_SetRenderDrawColor(gInputRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
+        SDL_RenderClear(gInputRenderer);
+        texture_render(
+            &gPlayerPromptTexture,
+            (INPUT_WINDOW_WIDTH - gPlayerPromptTexture.width) / 2,
+            0,
+            NULL,
+            gInputRenderer
+        );
+        texture_render(
+            &gPlayerNameTexture,
+            (INPUT_WINDOW_WIDTH - gPlayerNameTexture.width) / 2,
+            gPlayerPromptTexture.height,
+            NULL,
+            gInputRenderer
+        );
+        SDL_RenderPresent(gInputRenderer);
+
+        /* cap frame rate */
+        int frame_ticks = timer_get_ticks(&frame_timer);
+        if (frame_ticks < SCREEN_TICKS_PER_FRAME) {
+            SDL_Delay(SCREEN_TICKS_PER_FRAME - frame_ticks);
+        }
+    }
+
+    SDL_StopTextInput();
+
+    SDL_DestroyRenderer(gInputRenderer);
+    gInputRenderer = NULL;
+    SDL_DestroyWindow(gInputWindow);
+    gInputWindow = NULL;
+
+    highscores_read();
+    strcpy(gHighScores[0].name, player_name);
+    gHighScores[0].score = score;
+    highscores_sort();
+    highscores_write();
 
     SDL_ShowSimpleMessageBox(
         SDL_MESSAGEBOX_INFORMATION,
