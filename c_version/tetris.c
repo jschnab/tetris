@@ -22,7 +22,7 @@
 #define SCREEN_WIDTH (PLAYFIELD_WIDTH * 2.5)
 #define SCREEN_HEIGHT (PLAYFIELD_HEIGHT * 1.1)
 #define INPUT_WINDOW_WIDTH 400
-#define INPUT_WINDOW_HEIGHT 400
+#define INPUT_WINDOW_HEIGHT 100
 #define INFOFIELD_WIDTH PLAYFIELD_WIDTH
 #define INFOFIELD_HEIGHT PLAYFIELD_HEIGHT
 #define PLAYFIELD_POSITION_X (SCREEN_WIDTH / 2 - PLAYFIELD_WIDTH)
@@ -35,7 +35,7 @@
 #define PIECE_MATRIX_HEIGHT 4
 #define NPIECES 7
 #define FULL_ROWS_PER_LEVEL 8
-#define PLAYER_NAME_LENGTH 20
+#define PLAYER_NAME_LENGTH 10
 #define NUMBER_HIGH_SCORES 10
 
 
@@ -330,7 +330,7 @@ bool initialize() {
         SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC
     );
     check_mem(gRenderer);
-    SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
+    SDL_SetRenderDrawColor(gRenderer, 0x41, 0x3D, 0x3D, 0xFF);
     int img_flags = IMG_INIT_PNG;
     check(
         IMG_Init(img_flags) & img_flags,
@@ -673,7 +673,7 @@ bool start_input_window() {
         SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC
     );
     check_mem(gInputRenderer);
-    SDL_SetRenderDrawColor(gInputRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
+    SDL_SetRenderDrawColor(gInputRenderer, 0x41, 0x3D, 0x3D, 0xFF);
     return true;
 
     error:
@@ -784,12 +784,15 @@ int main(int argc, char *argv[]) {
     int total_rows = 0;  /* total number of full rows made in the game */
     char score_text[40];
     char player_name[PLAYER_NAME_LENGTH] = "";  /* stored in the high scores list */
-    char high_scores[1000];
+    char high_scores_text[1000] = "Rank          Name        Score\n\n";
+    char high_score_line[33];
     gNumberHighScores = 1;  /* we have at least the current game's score */
     char level_text[40];
     char total_rows_text[40];
-    SDL_Color text_color = {0, 0, 0, 255};
-    Piece pieces[NPIECES] = {piece_I, piece_J, piece_L, piece_O, piece_S, piece_T, piece_Z};
+    SDL_Color text_color = {0xFF, 0xFF, 0xFF, 0xFF};
+    Piece pieces[NPIECES] = {
+        piece_I, piece_J, piece_L, piece_O, piece_S, piece_T, piece_Z
+    };
     Piece *current_piece = piece_spawn(pieces);
 
     timer_start(&game_timer);
@@ -818,7 +821,7 @@ int main(int argc, char *argv[]) {
 
         piece_move(current_piece);
 
-        SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
+        SDL_SetRenderDrawColor(gRenderer, 0x41, 0x3D, 0x3D, 0xFF);
         SDL_RenderClear(gRenderer);
 
         /* update the playfield and draw it */
@@ -901,7 +904,7 @@ int main(int argc, char *argv[]) {
     check(
         texture_from_text(
             &gPlayerPromptTexture,
-            "Enter your name:",
+            "Enter your name and press <Enter>:",
             text_color,
             gInputRenderer
         ),
@@ -918,14 +921,14 @@ int main(int argc, char *argv[]) {
         render_text = false;
 
         while (SDL_PollEvent(&e) != 0) {
-            if (e.type == SDL_WINDOWEVENT && e.window.event == SDL_WINDOWEVENT_CLOSE) {
-                quit = true;
-            }
             if (e.type == SDL_KEYDOWN) {
                 /* handle backspace */
                 if (e.key.keysym.sym == SDLK_BACKSPACE && strlen(player_name) > 0) {
                     player_name[strlen(player_name) - 1] = '\0';
                     render_text = true;
+                }
+                else if (e.key.keysym.sym == SDLK_RETURN && strlen(player_name) > 0) {
+                    quit = true;
                 }
             }
             /* text input */
@@ -962,7 +965,7 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        SDL_SetRenderDrawColor(gInputRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
+        SDL_SetRenderDrawColor(gInputRenderer, 0x41, 0x3D, 0x3D, 0xFF);
         SDL_RenderClear(gInputRenderer);
         texture_render(
             &gPlayerPromptTexture,
@@ -1000,10 +1003,19 @@ int main(int argc, char *argv[]) {
     highscores_sort();
     highscores_write();
 
+    for (int i = 0; i < gNumberHighScores; i++) {
+        sprintf(
+            high_score_line,
+            "%4d    %10s    %'9d\n",
+            i + 1, gHighScores[i].name, gHighScores[i].score
+        );
+        strcat(high_scores_text, high_score_line);
+    }
+
     SDL_ShowSimpleMessageBox(
         SDL_MESSAGEBOX_INFORMATION,
-        "Game Over",
-        score_text,
+        "High Scores",
+        high_scores_text,
         gWindow
     );
 
